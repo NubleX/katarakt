@@ -1,0 +1,46 @@
+{
+  "name": "katarakt",
+  "version": "1.0.0",
+  "description": "Browser Security Sentinel - Multi-layered browser hardening with Cloudflare and Google Cloud integration",
+  "main": "cloudflare-worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "serve": "npx serve . -p 3000",
+    "gcp:build": "docker build -t gcr.io/$PROJECT_ID/katarakt-backend .",
+    "gcp:push": "docker push gcr.io/$PROJECT_ID/katarakt-backend",
+    "gcp:deploy": "gcloud run services replace google-cloud-run.yaml",
+    "tail": "wrangler tail",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "security",
+    "browser",
+    "fingerprinting",
+    "privacy",
+    "cloudflare",
+    "workers",
+    "google-cloud",
+    "mullvad",
+    "hardening",
+    "pentesting"
+  ],
+  "author": "Katarakt Security",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/katarakt-security/katarakt.git"
+  },
+  "homepage": "https://katarakt.security",
+  "bugs": {
+    "url": "https://github.com/katarakt-security/katarakt/issues"
+  }
+}

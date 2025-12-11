@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Katarakt - Browser Security Sentinel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-tertiary: #1a1a24;
+      --accent-red: #ff2d55;
+      --accent-cyan: #00d4ff;
+      --accent-green: #00ff88;
+      --accent-orange: #ff9500;
+      --accent-purple: #bf5af2;
+      --text-primary: #ffffff;
+      --text-secondary: #8e8e93;
+      --text-muted: #48484a;
+      --border-color: #2c2c2e;
+      --glow-red: 0 0 40px rgba(255, 45, 85, 0.3);
+      --glow-cyan: 0 0 40px rgba(0, 212, 255, 0.3);
+      --glow-green: 0 0 40px rgba(0, 255, 136, 0.3);
+    }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .noise-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .grid-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    #root {
+      position: relative;
+      z-index: 1;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    @keyframes scan-line {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100vh); }
+    }
+
+    @keyframes data-flow {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
+    @keyframes shield-pulse {
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 20px rgba(0, 255, 136, 0.4)); }
+      50% { transform: scale(1.02); filter: drop-shadow(0 0 40px rgba(0, 255, 136, 0.6)); }
+    }
+
+    .shield-active {
+      animation: shield-pulse 2s ease-in-out infinite;
+    }
+
+    .scan-line {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+      animation: scan-line 8s linear infinite;
+      opacity: 0.3;
+      pointer-events: none;
+      z-index: 9998;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-secondary);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="noise-overlay"></div>
+  <div class="grid-bg"></div>
+  <div class="scan-line"></div>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    // Security Configuration inspired by Mullvad Browser
+    const SECURITY_CONFIG = {
+      fingerprinting: {
+        name: 'Fingerprint Resistance',
+        description: 'Spoofs canvas, WebGL, audio context, and hardware fingerprints',
+        settings: {
+          'privacy.resistFingerprinting': true,
+          'privacy.resistFingerprinting.letterboxing': true,
+          'webgl.disabled': false,
+          'webgl.enable-webgl2': true,
+          'dom.webaudio.enabled': true,
+          'privacy.resistFingerprinting.block_mozAddonManager': true,
+        }
+      },
+      webrtc: {
+        name: 'WebRTC Protection',
+        description: 'Prevents IP leaks through WebRTC connections',
+        settings: {
+          'media.peerconnection.enabled': false,
+          'media.peerconnection.ice.default_address_only': true,
+          'media.peerconnection.ice.no_host': true,
+          'media.peerconnection.ice.proxy_only_if_behind_proxy': true,
+        }
+      },
+      tracking: {
+        name: 'Enhanced Tracking Protection',
+        description: 'Blocks trackers, cryptominers, and fingerprinters',
+        settings: {
+          'privacy.trackingprotection.enabled': true,
+          'privacy.trackingprotection.socialtracking.enabled': true,
+          'privacy.trackingprotection.cryptomining.enabled': true,
+          'privacy.trackingprotection.fingerprinting.enabled': true,
+        }
+      },
+      cookies: {
+        name: 'Cookie Isolation',
+        description: 'Partitions cookies per first-party domain',
+        settings: {
+          'network.cookie.cookieBehavior': 5,
+          'privacy.partition.network_state': true,
+          'privacy.partition.serviceWorkers': true,
+          'privacy.partition.always_partition_third_party_non_cookie_storage': true,
+        }
+      },
+      network: {
+        name: 'Network Hardening',
+        description: 'DNS over HTTPS, prefetch blocking, referrer policy',
+        settings: {
+          'network.dns.disablePrefetch': true,
+          'network.prefetch-next': false,
+          'network.http.referer.XOriginPolicy': 2,
+          'network.http.referer.XOriginTrimmingPolicy': 2,
+          'network.trr.mode': 3,
+        }
+      },
+      javascript: {
+        name: 'JavaScript Hardening',
+        description: 'Limits dangerous JavaScript APIs',
+        settings: {
+          'dom.disable_window_move_resize': true,
+          'dom.disable_beforeunload': true,
+          'dom.push.enabled': false,
+          'dom.battery.enabled': false,
+        }
+      }
+    };
+
+    // Service Worker Registration
+    const registerSecurityWorker = async () => {
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.register('/katarakt-worker.js', {
+            scope: '/'
+          });
+          return registration;
+        } catch (error) {
+          console.error('Service Worker registration failed:', error);
+          return null;
+        }
+      }
+      return null;
+    };
+
+    // Shield Icon Component
+    const ShieldIcon = ({ active, size = 120 }) => (
+      <svg 
+        width={size} 
+        height={size} 
+        viewBox="0 0 120 120" 
+        fill="none" 
+        className={active ? 'shield-active' : ''}
+        style={{ transition: 'all 0.5s ease' }}
+      >
+        <defs>
+          <linearGradient id="shieldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={active ? '#00ff88' : '#48484a'} />
+            <stop offset="100%" stopColor={active ? '#00d4ff' : '#2c2c2e'} />
+          </linearGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <path 
+          d="M60 10L15 30V55C15 82.5 34.5 108 60 115C85.5 108 105 82.5 105 55V30L60 10Z" 
+          stroke="url(#shieldGradient)" 
+          strokeWidth="3" 
+          fill="none"
+          filter={active ? "url(#glow)" : ""}
+        />
+        <path 
+          d="M60 20L25 36V55C25 77.5 41 98 60 104C79 98 95 77.5 95 55V36L60 20Z" 
+          fill={active ? 'rgba(0, 255, 136, 0.1)' : 'rgba(72, 72, 74, 0.1)'}
+          stroke="url(#shieldGradient)"
+          strokeWidth="1"
+        />
+        {active && (
+          <>
+            <path d="M45 60L55 70L75 50" stroke="#00ff88" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+            <circle cx="60" cy="60" r="25" stroke="url(#shieldGradient)" strokeWidth="1" fill="none" opacity="0.3">
+              <animate attributeName="r" values="25;30;25" dur="2s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite"/>
+            </circle>
+          </>
+        )}
+        {!active && (
+          <text x="60" y="65" textAnchor="middle" fill="#48484a" fontSize="24" fontFamily="JetBrains Mono">!</text>
+        )}
+      </svg>
+    );
+
+    // Threat Detector Component
+    const ThreatDetector = ({ threats, onDismiss }) => {
+      if (threats.length === 0) return null;
+      
+      return (
+        <div style={{
+          position: 'fixed',
+          bottom: 20,
+          right: 20,
+          maxWidth: 400,
+          zIndex: 1000
+        }}>
+          {threats.map((threat, index) => (
+            <div key={index} style={{
+              background: 'linear-gradient(135deg, rgba(255, 45, 85, 0.15), rgba(255, 45, 85, 0.05))',
+              border: '1px solid rgba(255, 45, 85, 0.3)',
+              borderRadius: 12,
+              padding: 16,
+              marginBottom: 10,
+              backdropFilter: 'blur(10px)',
+              animation: 'fadeIn 0.3s ease'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: 'var(--accent-red)', fontWeight: 600, fontSize: 14 }}>
+                  THREAT DETECTED
+                </span>
+                <button 
+                  onClick={() => onDismiss(index)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontSize: 18
+                  }}
+                >
+                  x
+                </button>
+              </div>
+              <p className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                {threat.type}
+              </p>
+              <p style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+                {threat.message}
+              </p>
+            </div>
+          ))}
+        </div>
+      );
+    };
+
+    // Security Module Card
+    const SecurityModule = ({ module, config, enabled, onToggle, stats }) => {
+      const [expanded, setExpanded] = useState(false);
+      
+      return (
+        <div style={{
+          background: enabled 
+            ? 'linear-gradient(135deg, rgba(0, 255, 136, 0.08), rgba(0, 212, 255, 0.04))'
+            : 'var(--bg-tertiary)',
+          border: `1px solid ${enabled ? 'rgba(0, 255, 136, 0.2)' : 'var(--border-color)'}`,
+          borderRadius: 16,
+          padding: 20,
+          transition: 'all 0.3s ease',
+          cursor: 'pointer'
+        }}
+        onClick={() => setExpanded(!expanded)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: enabled ? 'var(--accent-green)' : 'var(--text-muted)',
+                boxShadow: enabled ? 'var(--glow-green)' : 'none'
+              }} />
+              <div>
+                <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{config.name}</h3>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{config.description}</p>
+              </div>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggle(); }}
+              style={{
+                background: enabled 
+                  ? 'linear-gradient(135deg, var(--accent-green), var(--accent-cyan))'
+                  : 'var(--bg-secondary)',
+                border: `1px solid ${enabled ? 'transparent' : 'var(--border-color)'}`,
+                borderRadius: 20,
+                padding: '8px 20px',
+                color: enabled ? 'var(--bg-primary)' : 'var(--text-secondary)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              {enabled ? 'ACTIVE' : 'ENABLE'}
+            </button>
+          </div>
+          
+          {expanded && (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
+              <p className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                APPLIED SETTINGS:
+              </p>
+              {Object.entries(config.settings).map(([key, value]) => (
+                <div key={key} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '6px 0',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)'
+                }}>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--accent-cyan)' }}>{key}</span>
+                  <span className="mono" style={{ 
+                    fontSize: 11, 
+                    color: typeof value === 'boolean' 
+                      ? (value ? 'var(--accent-green)' : 'var(--accent-red)') 
+                      : 'var(--accent-orange)'
+                  }}>
+                    {String(value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // Stats Panel
+    const StatsPanel = ({ stats }) => (
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 16,
+        marginBottom: 32
+      }}>
+        {[
+          { label: 'Blocked Trackers', value: stats.trackersBlocked, color: 'var(--accent-red)' },
+          { label: 'Scripts Analyzed', value: stats.scriptsAnalyzed, color: 'var(--accent-cyan)' },
+          { label: 'Fingerprints Spoofed', value: stats.fingerprintsSpoofed, color: 'var(--accent-purple)' },
+          { label: 'Requests Protected', value: stats.requestsProtected, color: 'var(--accent-green)' }
+        ].map((stat, i) => (
+          <div key={i} style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 12,
+            padding: 20,
+            textAlign: 'center'
+          }}>
+            <p className="mono" style={{ fontSize: 28, fontWeight: 700, color: stat.color, marginBottom: 4 }}>
+              {stat.value.toLocaleString()}
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 1 }}>
+              {stat.label}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+
+    // Traffic Monitor
+    const TrafficMonitor = ({ traffic }) => {
+      const canvasRef = useRef(null);
+      
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        // Clear
+        ctx.fillStyle = '#12121a';
+        ctx.fillRect(0, 0, width, height);
+        
+        // Draw grid
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.1)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < width; i += 40) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i, height);
+          ctx.stroke();
+        }
+        for (let i = 0; i < height; i += 20) {
+          ctx.beginPath();
+          ctx.moveTo(0, i);
+          ctx.lineTo(width, i);
+          ctx.stroke();
+        }
+        
+        // Draw traffic line
+        if (traffic.length > 1) {
+          const maxVal = Math.max(...traffic, 100);
+          
+          ctx.beginPath();
+          ctx.strokeStyle = '#00ff88';
+          ctx.lineWidth = 2;
+          
+          traffic.forEach((val, i) => {
+            const x = (i / (traffic.length - 1)) * width;
+            const y = height - (val / maxVal) * (height - 20);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+          
+          // Glow effect
+          ctx.shadowColor = '#00ff88';
+          ctx.shadowBlur = 10;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }, [traffic]);
+      
+      return (
+        <div style={{
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: 16,
+          padding: 20,
+          marginBottom: 32
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ 
+                width: 8, 
+                height: 8, 
+                borderRadius: '50%', 
+                background: 'var(--accent-green)',
+                animation: 'pulse-glow 2s infinite'
+              }} />
+              LIVE TRAFFIC MONITOR
+            </h3>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+              {traffic[traffic.length - 1] || 0} req/s
+            </span>
+          </div>
+          <canvas 
+            ref={canvasRef} 
+            width={800} 
+            height={120}
+            style={{ width: '100%', height: 120, borderRadius: 8 }}
+          />
+        </div>
+      );
+    };
+
+    // Cloudflare Integration Panel
+    const CloudflarePanel = ({ config, onUpdate }) => {
+      return (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(247, 127, 0, 0.08), rgba(247, 127, 0, 0.02))',
+          border: '1px solid rgba(247, 127, 0, 0.2)',
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 20
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M16.5 8.5l-3.5 7.5-2-4.5-4.5 2 7.5-3.5 2.5-1.5z" fill="#f77f00"/>
+              <circle cx="12" cy="12" r="10" stroke="#f77f00" strokeWidth="1.5" fill="none"/>
+            </svg>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>Cloudflare Integration</span>
+          </div>
+          
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Bot Management</span>
+              <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24 }}>
+                <input 
+                  type="checkbox" 
+                  checked={config.botManagement}
+                  onChange={(e) => onUpdate({ ...config, botManagement: e.target.checked })}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: 'pointer',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  background: config.botManagement ? 'var(--accent-green)' : 'var(--bg-tertiary)',
+                  borderRadius: 12,
+                  transition: '0.3s',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    height: 18,
+                    width: 18,
+                    left: config.botManagement ? 22 : 2,
+                    bottom: 2,
+                    background: 'white',
+                    borderRadius: '50%',
+                    transition: '0.3s'
+                  }} />
+                </span>
+              </label>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>WAF Rules</span>
+              <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24 }}>
+                <input 
+                  type="checkbox" 
+                  checked={config.wafRules}
+                  onChange={(e) => onUpdate({ ...config, wafRules: e.target.checked })}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: 'pointer',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  background: config.wafRules ? 'var(--accent-green)' : 'var(--bg-tertiary)',
+                  borderRadius: 12,
+                  transition: '0.3s',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    height: 18,
+                    width: 18,
+                    left: config.wafRules ? 22 : 2,
+                    bottom: 2,
+                    background: 'white',
+                    borderRadius: '50%',
+                    transition: '0.3s'
+                  }} />
+                </span>
+              </label>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>DDoS Protection</span>
+              <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24 }}>
+                <input 
+                  type="checkbox" 
+                  checked={config.ddosProtection}
+                  onChange={(e) => onUpdate({ ...config, ddosProtection: e.target.checked })}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: 'pointer',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  background: config.ddosProtection ? 'var(--accent-green)' : 'var(--bg-tertiary)',
+                  borderRadius: 12,
+                  transition: '0.3s',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    height: 18,
+                    width: 18,
+                    left: config.ddosProtection ? 22 : 2,
+                    bottom: 2,
+                    background: 'white',
+                    borderRadius: '50%',
+                    transition: '0.3s'
+                  }} />
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Google Cloud Panel
+    const GoogleCloudPanel = ({ config, onUpdate }) => {
+      return (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(66, 133, 244, 0.08), rgba(66, 133, 244, 0.02))',
+          border: '1px solid rgba(66, 133, 244, 0.2)',
+          borderRadius: 16,
+          padding: 24
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L2 7v10l10 5 10-5V7L12 2z" stroke="#4285f4" strokeWidth="1.5" fill="none"/>
+              <path d="M12 22V12M2 7l10 5 10-5" stroke="#4285f4" strokeWidth="1.5"/>
+            </svg>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>Google Cloud Security</span>
+          </div>
+          
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Cloud Armor</span>
+              <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24 }}>
+                <input 
+                  type="checkbox" 
+                  checked={config.cloudArmor}
+                  onChange={(e) => onUpdate({ ...config, cloudArmor: e.target.checked })}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: 'pointer',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  background: config.cloudArmor ? 'var(--accent-green)' : 'var(--bg-tertiary)',
+                  borderRadius: 12,
+                  transition: '0.3s',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    height: 18,
+                    width: 18,
+                    left: config.cloudArmor ? 22 : 2,
+                    bottom: 2,
+                    background: 'white',
+                    borderRadius: '50%',
+                    transition: '0.3s'
+                  }} />
+                </span>
+              </label>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Threat Intelligence</span>
+              <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24 }}>
+                <input 
+                  type="checkbox" 
+                  checked={config.threatIntelligence}
+                  onChange={(e) => onUpdate({ ...config, threatIntelligence: e.target.checked })}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: 'pointer',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  background: config.threatIntelligence ? 'var(--accent-green)' : 'var(--bg-tertiary)',
+                  borderRadius: 12,
+                  transition: '0.3s',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    height: 18,
+                    width: 18,
+                    left: config.threatIntelligence ? 22 : 2,
+                    bottom: 2,
+                    background: 'white',
+                    borderRadius: '50%',
+                    transition: '0.3s'
+                  }} />
+                </span>
+              </label>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Security Command Center</span>
+              <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24 }}>
+                <input 
+                  type="checkbox" 
+                  checked={config.securityCommandCenter}
+                  onChange={(e) => onUpdate({ ...config, securityCommandCenter: e.target.checked })}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: 'pointer',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  background: config.securityCommandCenter ? 'var(--accent-green)' : 'var(--bg-tertiary)',
+                  borderRadius: 12,
+                  transition: '0.3s',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    height: 18,
+                    width: 18,
+                    left: config.securityCommandCenter ? 22 : 2,
+                    bottom: 2,
+                    background: 'white',
+                    borderRadius: '50%',
+                    transition: '0.3s'
+                  }} />
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Main App Component
+    const KataraktApp = () => {
+      const [isActive, setIsActive] = useState(false);
+      const [persistentMode, setPersistentMode] = useState(false);
+      const [modules, setModules] = useState({
+        fingerprinting: true,
+        webrtc: true,
+        tracking: true,
+        cookies: true,
+        network: true,
+        javascript: false
+      });
+      const [stats, setStats] = useState({
+        trackersBlocked: 0,
+        scriptsAnalyzed: 0,
+        fingerprintsSpoofed: 0,
+        requestsProtected: 0
+      });
+      const [traffic, setTraffic] = useState(Array(50).fill(0));
+      const [threats, setThreats] = useState([]);
+      const [cloudflareConfig, setCloudflareConfig] = useState({
+        botManagement: true,
+        wafRules: true,
+        ddosProtection: true
+      });
+      const [googleCloudConfig, setGoogleCloudConfig] = useState({
+        cloudArmor: false,
+        threatIntelligence: false,
+        securityCommandCenter: false
+      });
+
+      // Simulate traffic and stats
+      useEffect(() => {
+        if (!isActive) return;
+        
+        const interval = setInterval(() => {
+          // Update traffic
+          setTraffic(prev => {
+            const newTraffic = [...prev.slice(1), Math.floor(Math.random() * 150) + 20];
+            return newTraffic;
+          });
+          
+          // Update stats
+          setStats(prev => ({
+            trackersBlocked: prev.trackersBlocked + Math.floor(Math.random() * 3),
+            scriptsAnalyzed: prev.scriptsAnalyzed + Math.floor(Math.random() * 10),
+            fingerprintsSpoofed: prev.fingerprintsSpoofed + Math.floor(Math.random() * 2),
+            requestsProtected: prev.requestsProtected + Math.floor(Math.random() * 15)
+          }));
+          
+          // Randomly detect threats
+          if (Math.random() < 0.02) {
+            const threatTypes = [
+              { type: 'CANVAS_FINGERPRINT', message: 'Canvas fingerprinting attempt blocked from tracker.analytics.com' },
+              { type: 'WEBRTC_LEAK', message: 'WebRTC IP leak prevented - local address masked' },
+              { type: 'CRYPTOMINER', message: 'Cryptocurrency mining script detected and neutralized' },
+              { type: 'TRACKING_PIXEL', message: 'Invisible tracking pixel blocked from ad-network.com' }
+            ];
+            setThreats(prev => [...prev, threatTypes[Math.floor(Math.random() * threatTypes.length)]]);
+          }
+        }, 500);
+        
+        return () => clearInterval(interval);
+      }, [isActive]);
+
+      const toggleModule = (module) => {
+        setModules(prev => ({ ...prev, [module]: !prev[module] }));
+      };
+
+      const dismissThreat = (index) => {
+        setThreats(prev => prev.filter((_, i) => i !== index));
+      };
+
+      const activateKatarakt = () => {
+        setIsActive(true);
+        setStats({
+          trackersBlocked: 0,
+          scriptsAnalyzed: 0,
+          fingerprintsSpoofed: 0,
+          requestsProtected: 0
+        });
+      };
+
+      const deactivateKatarakt = () => {
+        setIsActive(false);
+        setThreats([]);
+      };
+
+      const enabledModulesCount = Object.values(modules).filter(Boolean).length;
+      const totalModules = Object.keys(modules).length;
+
+      return (
+        <div style={{ minHeight: '100vh', padding: '40px 20px' }}>
+          <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+            {/* Header */}
+            <header style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              marginBottom: 48,
+              paddingBottom: 32,
+              borderBottom: '1px solid var(--border-color)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  background: isActive 
+                    ? 'linear-gradient(135deg, var(--accent-green), var(--accent-cyan))'
+                    : 'var(--bg-tertiary)',
+                  borderRadius: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: isActive ? 'var(--glow-green)' : 'none',
+                  transition: 'all 0.5s ease'
+                }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" 
+                      stroke={isActive ? '#0a0a0f' : '#8e8e93'} 
+                      strokeWidth="2" 
+                      fill="none"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h1 style={{ 
+                    fontSize: 28, 
+                    fontWeight: 700, 
+                    letterSpacing: -1,
+                    background: isActive 
+                      ? 'linear-gradient(135deg, var(--accent-green), var(--accent-cyan))'
+                      : 'linear-gradient(135deg, #fff, #8e8e93)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent'
+                  }}>
+                    KATARAKT
+                  </h1>
+                  <p className="mono" style={{ fontSize: 11, color: 'var(--text-secondary)', letterSpacing: 2 }}>
+                    BROWSER SECURITY SENTINEL
+                  </p>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ textAlign: 'right', marginRight: 16 }}>
+                  <p className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    PROTECTION MODULES
+                  </p>
+                  <p style={{ fontSize: 18, fontWeight: 600 }}>
+                    <span style={{ color: 'var(--accent-green)' }}>{enabledModulesCount}</span>
+                    <span style={{ color: 'var(--text-muted)' }}> / {totalModules}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={isActive ? deactivateKatarakt : activateKatarakt}
+                  style={{
+                    background: isActive 
+                      ? 'linear-gradient(135deg, var(--accent-red), #ff6b35)'
+                      : 'linear-gradient(135deg, var(--accent-green), var(--accent-cyan))',
+                    border: 'none',
+                    borderRadius: 12,
+                    padding: '14px 32px',
+                    color: isActive ? 'white' : 'var(--bg-primary)',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease',
+                    boxShadow: isActive ? 'var(--glow-red)' : 'var(--glow-green)'
+                  }}
+                >
+                  {isActive ? 'DEACTIVATE' : 'ACTIVATE SHIELD'}
+                </button>
+              </div>
+            </header>
+
+            {/* Main Content */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 32 }}>
+              {/* Left Column */}
+              <div>
+                {/* Status Panel */}
+                <div style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 20,
+                  padding: 32,
+                  marginBottom: 32,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 32
+                }}>
+                  <ShieldIcon active={isActive} />
+                  <div style={{ flex: 1 }}>
+                    <h2 style={{ 
+                      fontSize: 24, 
+                      fontWeight: 700, 
+                      marginBottom: 8,
+                      color: isActive ? 'var(--accent-green)' : 'var(--text-secondary)'
+                    }}>
+                      {isActive ? 'PROTECTION ACTIVE' : 'SHIELD OFFLINE'}
+                    </h2>
+                    <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16, maxWidth: 400 }}>
+                      {isActive 
+                        ? 'Katarakt is actively monitoring and hardening your browser against fingerprinting, tracking, and malicious scripts.'
+                        : 'Activate the shield to enable browser hardening based on Mullvad Browser security configurations.'}
+                    </p>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input 
+                          type="checkbox"
+                          id="persistent"
+                          checked={persistentMode}
+                          onChange={(e) => setPersistentMode(e.target.checked)}
+                          style={{ accentColor: 'var(--accent-cyan)' }}
+                        />
+                        <label htmlFor="persistent" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                          Persistent Mode
+                        </label>
+                      </div>
+                      <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {persistentMode ? 'Worker stays active after page close' : 'Protection ends on close'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stats */}
+                {isActive && <StatsPanel stats={stats} />}
+
+                {/* Traffic Monitor */}
+                {isActive && <TrafficMonitor traffic={traffic} />}
+
+                {/* Security Modules */}
+                <div>
+                  <h3 style={{ 
+                    fontSize: 12, 
+                    fontWeight: 600, 
+                    color: 'var(--text-muted)', 
+                    letterSpacing: 2,
+                    marginBottom: 16 
+                  }}>
+                    SECURITY MODULES
+                  </h3>
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    {Object.entries(SECURITY_CONFIG).map(([key, config]) => (
+                      <SecurityModule
+                        key={key}
+                        module={key}
+                        config={config}
+                        enabled={modules[key]}
+                        onToggle={() => toggleModule(key)}
+                        stats={stats}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column - Integrations */}
+              <div>
+                <h3 style={{ 
+                  fontSize: 12, 
+                  fontWeight: 600, 
+                  color: 'var(--text-muted)', 
+                  letterSpacing: 2,
+                  marginBottom: 16 
+                }}>
+                  CLOUD INTEGRATIONS
+                </h3>
+                
+                <CloudflarePanel 
+                  config={cloudflareConfig} 
+                  onUpdate={setCloudflareConfig} 
+                />
+                
+                <GoogleCloudPanel 
+                  config={googleCloudConfig} 
+                  onUpdate={setGoogleCloudConfig} 
+                />
+
+                {/* Export Config */}
+                <div style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 16,
+                  padding: 20,
+                  marginTop: 20
+                }}>
+                  <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Export Configuration</h4>
+                  <button style={{
+                    width: '100%',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: '12px 16px',
+                    color: 'var(--text-secondary)',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    marginBottom: 8,
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}>
+                    <span>Download user.js</span>
+                    <span className="mono" style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>Firefox</span>
+                  </button>
+                  <button style={{
+                    width: '100%',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: '12px 16px',
+                    color: 'var(--text-secondary)',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    marginBottom: 8,
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}>
+                    <span>Download policies.json</span>
+                    <span className="mono" style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>Chrome</span>
+                  </button>
+                  <button style={{
+                    width: '100%',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: '12px 16px',
+                    color: 'var(--text-secondary)',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}>
+                    <span>Deploy to Cloudflare</span>
+                    <span className="mono" style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>Worker</span>
+                  </button>
+                </div>
+
+                {/* Info Panel */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(191, 90, 242, 0.08), rgba(191, 90, 242, 0.02))',
+                  border: '1px solid rgba(191, 90, 242, 0.2)',
+                  borderRadius: 16,
+                  padding: 20,
+                  marginTop: 20
+                }}>
+                  <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--accent-purple)' }}>
+                    Powered by Mullvad Browser Research
+                  </h4>
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    Security configurations derived from Tor Project and Mullvad Browser's privacy-hardening settings. 
+                    Includes resistFingerprinting, letterboxing, WebGL protection, and enhanced tracking prevention.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Threat Notifications */}
+          <ThreatDetector threats={threats} onDismiss={dismissThreat} />
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<KataraktApp />);
+  </script>
+</body>
+</html>

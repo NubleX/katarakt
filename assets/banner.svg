@@ -1,0 +1,79 @@
+<svg width="1200" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a0f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a1a24;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#00ff88;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00d4ff;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="rgba(0, 212, 255, 0.1)" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="300" fill="url(#bgGradient)"/>
+  <rect width="1200" height="300" fill="url(#grid)"/>
+
+  <!-- Shield Icon -->
+  <g transform="translate(100, 90)" filter="url(#glow)">
+    <path d="M 60 0 L 0 25 L 0 75 C 0 100 20 115 60 120 C 100 115 120 100 120 75 L 120 25 Z"
+          fill="none" stroke="url(#accentGradient)" stroke-width="3"/>
+    <path d="M 30 60 L 50 80 L 90 40"
+          fill="none" stroke="#00ff88" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Main Title -->
+  <text x="260" y="130" font-family="'JetBrains Mono', 'Courier New', monospace" font-size="72"
+        font-weight="bold" fill="url(#accentGradient)" filter="url(#glow)">
+    KATARAKT
+  </text>
+
+  <!-- Subtitle -->
+  <text x="260" y="170" font-family="'Space Grotesk', 'Arial', sans-serif" font-size="24"
+        fill="#8e8e93" letter-spacing="2">
+    BROWSER SECURITY SENTINEL
+  </text>
+
+  <!-- Tagline -->
+  <text x="260" y="205" font-family="'Space Grotesk', 'Arial', sans-serif" font-size="16"
+        fill="#48484a" letter-spacing="1">
+    Multi-layered browser hardening with edge protection
+  </text>
+
+  <!-- Decorative elements -->
+  <circle cx="950" cy="80" r="3" fill="#00d4ff" opacity="0.6"/>
+  <circle cx="1000" cy="100" r="2" fill="#00ff88" opacity="0.6"/>
+  <circle cx="1050" cy="70" r="3" fill="#00d4ff" opacity="0.6"/>
+  <circle cx="1100" cy="90" r="2" fill="#bf5af2" opacity="0.6"/>
+
+  <circle cx="920" cy="220" r="2" fill="#00ff88" opacity="0.6"/>
+  <circle cx="980" cy="240" r="3" fill="#00d4ff" opacity="0.6"/>
+  <circle cx="1040" cy="230" r="2" fill="#bf5af2" opacity="0.6"/>
+  <circle cx="1090" cy="250" r="3" fill="#00ff88" opacity="0.6"/>
+
+  <!-- Bottom accent line -->
+  <line x1="260" y1="225" x2="700" y2="225" stroke="url(#accentGradient)" stroke-width="2" opacity="0.5"/>
+
+  <!-- Tech stack indicators -->
+  <g transform="translate(260, 245)" font-family="'JetBrains Mono', monospace" font-size="12" fill="#48484a">
+    <text x="0" y="0">CLOUDFLARE</text>
+    <circle cx="-10" cy="-4" r="3" fill="#ff9500"/>
+
+    <text x="110" y="0">GOOGLE CLOUD</text>
+    <circle cx="100" cy="-4" r="3" fill="#00d4ff"/>
+
+    <text x="240" y="0">SERVICE WORKER</text>
+    <circle cx="230" cy="-4" r="3" fill="#00ff88"/>
+  </g>
+</svg>
