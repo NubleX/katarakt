@@ -1,6 +1,7 @@
+<div align="center">
+
 # KATARAKT
 
-<div align="center">
 ![Katarakt Banner](./assets/banner.svg)
 
 ## Browser Security Sentinel
@@ -34,22 +35,6 @@ Inspired by Mullvad Browser's privacy-first approach, Katarakt provides multi-la
 - [Support the Project](#support-the-project)
 
 ---
-
-``` bash
-    ╔═══════════════════════════════════════════╗
-    ║                                           ║
-    ║     ██╗  ██╗ █████╗ ████████╗ █████╗      ║
-    ║     ██║ ██╔╝██╔══██╗╚══██╔══╝██╔══██╗     ║
-    ║     █████╔╝ ███████║   ██║   ███████║     ║
-    ║     ██╔═██╗ ██╔══██║   ██║   ██╔══██║     ║
-    ║     ██║  ██╗██║  ██║   ██║   ██║  ██║     ║
-    ║     ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝     ║
-    ║                                           ║
-    ║             www.idarti.com                ║
-    ║                                           ║
-    ║        Browser Security Sentinel          ║
-    ╚═══════════════════════════════════════════╝
-```
 
 ## Architecture
 
@@ -127,6 +112,8 @@ Inspired by Mullvad Browser's privacy-first approach, Katarakt provides multi-la
 
 ### Fingerprint Vectors Protected
 
+<div align="center">
+
 | Vector           | Protection Method                                      |
 |------------------|--------------------------------------------------------|
 | Canvas           | Noise injection + getImageData spoofing                |
@@ -142,6 +129,8 @@ Inspired by Mullvad Browser's privacy-first approach, Katarakt provides multi-la
 | Text Metrics     | Values rounded                                         |
 | ClientRects      | Values rounded                                         |
 | Speech Synthesis | getVoices returns empty                                |
+
+</div>
 
 ### Edge Protection (Cloudflare Worker)
 
@@ -160,6 +149,8 @@ Inspired by Mullvad Browser's privacy-first approach, Katarakt provides multi-la
 
 ## Security Modules
 
+<div align="center">
+
 | Module         | Description                         | Default  |
 |--------        |-------------------------------------|----------|
 | Fingerprinting | Spoofs browser fingerprint vectors  | Enabled  |
@@ -170,6 +161,8 @@ Inspired by Mullvad Browser's privacy-first approach, Katarakt provides multi-la
 | JavaScript     | Limits dangerous browser APIs       | Disabled*|
 
 *JavaScript hardening may break some sites; enable with caution.
+
+</div>
 
 ## Quick Start
 
@@ -238,6 +231,8 @@ Deploy via enterprise management or manually.
 
 ## API Endpoints
 
+<div align="center">
+
 | Endpoint              | Method | Description            |
 |-----------------------|--------|------------------------|
 | `/api/health`         | GET    | Health check           |
@@ -245,6 +240,8 @@ Deploy via enterprise management or manually.
 | `/api/export/userjs`  | GET    | Export Firefox config  |
 | `/api/export/policies`| GET    | Export Chrome policies |
 | `/api/report`         | POST   | Submit threat report   |
+
+</div>
 
 ## Security Headers Applied
 
