@@ -31,6 +31,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
 KATARAKT_VERSION = "1.0.0"
+# "on" blocks requests whose User-Agent/headers look automated (curl, wget, headless browsers, ...)
+BOT_BLOCKING = "off"
 
 # KV Namespace for threat intelligence (optional)
 # [[kv_namespaces]]
@@ -51,9 +53,10 @@ KATARAKT_VERSION = "1.0.0"
 # [[analytics_engine_datasets]]
 # binding = "SECURITY_ANALYTICS"
 
-# Cron triggers for scheduled tasks
+# Cron triggers: none. The Worker has no scheduled() handler, so a cron here would only produce
+# failing invocations. Add a handler together with a cron expression if scheduled work is needed.
 [triggers]
-crons = ["0 0 * * *"]  # Daily at midnight UTC
+crons = []
 
 # Development settings
 [dev]

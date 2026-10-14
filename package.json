@@ -13,7 +13,7 @@
     "gcp:push": "docker push gcr.io/$PROJECT_ID/katarakt-backend",
     "gcp:deploy": "gcloud run services replace google-cloud-run.yaml",
     "tail": "wrangler tail",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "node --test"
   },
   "keywords": [
     "security",
@@ -30,17 +30,18 @@
   "author": "Katarakt Security",
   "license": "MIT",
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/katarakt-security/katarakt.git"
+    "url": "https://github.com/NubleX/katarakt.git"
   },
-  "homepage": "https://katarakt.security",
+  "homepage": "https://shield.idarti.com",
   "bugs": {
-    "url": "https://github.com/katarakt-security/katarakt/issues"
-  }
+    "url": "https://github.com/NubleX/katarakt/issues"
+  },
+  "type": "module"
 }

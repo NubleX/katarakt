@@ -10,8 +10,8 @@
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-ff9500?logo=cloudflare)](https://workers.cloudflare.com/)
 [![Google Cloud](https://img.shields.io/badge/Google%20Cloud-Run-00d4ff?logo=google-cloud)](https://cloud.google.com/run)
 [![Service Worker](https://img.shields.io/badge/Service-Worker-00ff88?logo=pwa)](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API)
-[![Security](https://img.shields.io/badge/Security-Hardened-bf5af2)](https://github.com/katarakt-security/katarakt)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-00d4ff.svg)](https://github.com/katarakt-security/katarakt/pulls)
+[![Security](https://img.shields.io/badge/Security-Hardened-bf5af2)](https://github.com/NubleX/katarakt)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-00d4ff.svg)](https://github.com/NubleX/katarakt/pulls)
 
 </div>
 
@@ -236,19 +236,25 @@ Deploy via enterprise management or manually.
 | Endpoint              | Method | Description            |
 |-----------------------|--------|------------------------|
 | `/api/health`         | GET    | Health check           |
-| `/api/status`         | GET    | Protection status      |
+| `/api/status`         | GET    | What this Worker applies (headers, CSP, script injection, bot blocking on/off) |
 | `/api/export/userjs`  | GET    | Export Firefox config  |
 | `/api/export/policies`| GET    | Export Chrome policies |
-| `/api/report`         | POST   | Submit threat report   |
+| `/api/report`         | POST   | Submit threat report (JSON, max 8 KiB, fixed schema) |
 
 </div>
+
+## Bot blocking (opt-in)
+
+Request-header bot blocking is off by default. Set `BOT_BLOCKING = "on"` in `wrangler.toml` to return 403 for
+requests with automated-looking User-Agents or missing `Accept-Language` / `Accept-Encoding`. The heuristics are
+easy to evade and will also block curl, wget and privacy browsers that strip headers.
 
 ## Security Headers Applied
 
 ``` txt
 X-Content-Type-Options: nosniff
 X-Frame-Options: SAMEORIGIN
-X-XSS-Protection: 1; mode=block
+X-XSS-Protection: 0
 Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: geolocation=(), microphone=(), camera=()
 Cross-Origin-Opener-Policy: same-origin
