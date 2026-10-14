@@ -22,7 +22,8 @@
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'SAMEORIGIN',
-  'X-XSS-Protection': '1; mode=block',
+  // Legacy XSS auditors are removed from modern browsers and can introduce issues; the CSP is the real control
+  'X-XSS-Protection': '0',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()',
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -30,10 +31,19 @@ const SECURITY_HEADERS = {
   'Cross-Origin-Resource-Policy': 'same-origin',
 };
 
+// Third-party scripts index.html is allowed to load. Exact, version-pinned URLs only (each tag in
+// index.html carries a matching SRI hash), so the CSP does not trust the whole of unpkg.com.
+// 'unsafe-inline' stays until the in-page JSX is precompiled (Babel standalone needs it).
+const ALLOWED_SCRIPT_URLS = [
+  'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
+  'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
+  'https://unpkg.com/@babel/standalone@8.0.7/babel.min.js',
+];
+
 // Content Security Policy
 const CSP_DIRECTIVES = {
   'default-src': ["'self'"],
-  'script-src': ["'self'", "'unsafe-inline'"],
+  'script-src': ["'self'", "'unsafe-inline'", ...ALLOWED_SCRIPT_URLS],
   'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
   'font-src': ["'self'", 'https://fonts.gstatic.com'],
   'img-src': ["'self'", 'data:', 'blob:'],
@@ -151,7 +161,8 @@ function isTracker(url) {
   try {
     const hostname = new URL(url).hostname;
     for (const tracker of TRACKER_DOMAINS) {
-      if (hostname.includes(tracker)) {
+      // Match the domain itself or a subdomain, not any hostname that merely contains the string
+      if (hostname === tracker || hostname.endsWith(`.${tracker}`)) {
         return true;
       }
     }
@@ -403,11 +414,12 @@ async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
   const startTime = Date.now();
   
-  // Bot detection
-  const botCheck = detectBot(request);
+  // Bot detection is opt-in (BOT_BLOCKING = "on"): the heuristics are User-Agent based and easy to
+  // evade, and they also block legitimate tools and privacy browsers that strip headers.
+  const botCheck = env && env.BOT_BLOCKING === 'on' ? detectBot(request) : { isBot: false };
   if (botCheck.isBot) {
-    // Log the blocked request
-    console.log(`Bot blocked: ${botCheck.reason} from ${request.headers.get('CF-Connecting-IP')}`);
+    // Log the reason only; do not log client IPs
+    console.log(`Bot blocked: ${botCheck.reason}`);
     
     // Return challenge page or block
     return new Response(JSON.stringify({
@@ -425,26 +437,18 @@ async function handleRequest(request, env, ctx) {
   
   // Block tracker requests
   if (isTracker(request.url)) {
-    return new Response('', { status: 204 });
+    return new Response(null, { status: 204 });
   }
   
   // Handle API routes
   if (url.pathname.startsWith('/api/')) {
-    return handleAPIRequest(request, url);
+    return handleAPIRequest(request, url, env);
   }
   
   // Fetch the original response
-  let response = await fetch(request);
-  
-  // Clone the response to modify it
-  let body = await response.text();
-  
-  // Only inject protection into HTML responses
+  const response = await fetch(request);
   const contentType = response.headers.get('Content-Type') || '';
-  if (contentType.includes('text/html')) {
-    // Inject fingerprint protection script
-    body = body.replace('</head>', `${getFingerprintProtectionScript()}</head>`);
-  }
+  const isHTML = contentType.includes('text/html');
   
   // Build new headers
   const newHeaders = new Headers(response.headers);
@@ -461,6 +465,20 @@ async function handleRequest(request, env, ctx) {
   newHeaders.set('X-Katarakt-Time', `${Date.now() - startTime}ms`);
   newHeaders.set('X-Katarakt-Protected', 'true');
   
+  // Only HTML is buffered and rewritten. Everything else (images, fonts, downloads) is streamed
+  // untouched: reading binary bodies with .text() corrupts them and buffers large files in memory.
+  if (!isHTML) {
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders
+    });
+  }
+  
+  // Inject fingerprint protection script
+  const body = (await response.text()).replace('</head>', `${getFingerprintProtectionScript()}</head>`);
+  newHeaders.delete('Content-Length');
+  
   return new Response(body, {
     status: response.status,
     statusText: response.statusText,
@@ -468,48 +486,99 @@ async function handleRequest(request, env, ctx) {
   });
 }
 
+const MAX_REPORT_BYTES = 8 * 1024;
+const REPORT_STAT_KEYS = [
+  'trackersBlocked',
+  'scriptsAnalyzed',
+  'fingerprintsSpoofed',
+  'requestsProtected',
+  'cryptominersBlocked',
+  'httpsUpgrades',
+];
+
+function jsonResponse(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS, ...extraHeaders }
+  });
+}
+
+/**
+ * Read a request body as text, refusing to buffer more than maxBytes.
+ * Returns null when the limit is exceeded (works for chunked bodies with no Content-Length).
+ */
+async function readBodyLimited(request, maxBytes) {
+  const declared = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (!request.body) return '';
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Validate a threat report against the exact shape the service worker sends.
+ * Returns a sanitized object, or null if the payload is not acceptable.
+ */
+function sanitizeReport(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const { stats, timestamp, version } = data;
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) return null;
+  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) return null;
+  if (typeof version !== 'string' || version.length > 32) return null;
+  const cleanStats = {};
+  for (const key of REPORT_STAT_KEYS) {
+    const value = stats[key];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+    cleanStats[key] = Math.min(Math.floor(value), 1e9);
+  }
+  return { stats: cleanStats, timestamp, version };
+}
+
 /**
  * Handle API requests
  */
-async function handleAPIRequest(request, url) {
+async function handleAPIRequest(request, url, env) {
   const pathname = url.pathname;
   
   // Health check
   if (pathname === '/api/health') {
-    return new Response(JSON.stringify({
+    return jsonResponse({
       status: 'healthy',
       version: '1.0.0',
       timestamp: new Date().toISOString()
-    }), {
-      headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS }
     });
   }
   
-  // Get security status
+  // Report what this Worker actually does. It cannot see the zone's WAF or DDoS settings, so it
+  // does not claim them, and it keeps no counters, so it reports no statistics.
   if (pathname === '/api/status') {
-    return new Response(JSON.stringify({
-      protection: {
-        fingerprinting: true,
-        webrtc: true,
-        tracking: true,
-        cookies: true,
-        network: true,
-        javascript: true
-      },
-      integrations: {
-        cloudflare: {
-          botManagement: true,
-          wafRules: true,
-          ddosProtection: true
-        }
-      },
-      stats: {
-        requestsProcessed: 0,
-        botsBlocked: 0,
-        trackersBlocked: 0
+    return jsonResponse({
+      version: '1.0.0',
+      edge: {
+        securityHeaders: true,
+        contentSecurityPolicy: true,
+        fingerprintScriptInjection: true,
+        botBlocking: Boolean(env && env.BOT_BLOCKING === 'on'),
+        cloudflareBotManagementData: Boolean(request.cf && request.cf.botManagement)
       }
-    }), {
-      headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS }
     });
   }
   
@@ -537,12 +606,29 @@ async function handleAPIRequest(request, url) {
   }
   
   // Report endpoint for threat logging
-  if (pathname === '/api/report' && request.method === 'POST') {
-    const data = await request.json();
-    console.log('Threat report:', data);
-    return new Response(JSON.stringify({ received: true }), {
-      headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS }
-    });
+  if (pathname === '/api/report') {
+    if (request.method !== 'POST') {
+      return jsonResponse({ error: 'Method not allowed' }, 405, { Allow: 'POST' });
+    }
+    if (!(request.headers.get('Content-Type') || '').includes('application/json')) {
+      return jsonResponse({ error: 'Content-Type must be application/json' }, 415);
+    }
+    const raw = await readBodyLimited(request, MAX_REPORT_BYTES);
+    if (raw === null) {
+      return jsonResponse({ error: 'Payload too large' }, 413);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      return jsonResponse({ error: 'Invalid JSON' }, 400);
+    }
+    const report = sanitizeReport(parsed);
+    if (!report) {
+      return jsonResponse({ error: 'Invalid report' }, 400);
+    }
+    console.log('Threat report:', JSON.stringify(report));
+    return jsonResponse({ received: true });
   }
   
   return new Response(JSON.stringify({ error: 'Not found' }), {

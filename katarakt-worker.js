@@ -103,15 +103,23 @@ let stats = {
 
 // Message handling from main thread
 self.addEventListener('message', (event) => {
-  const { type, data } = event.data;
+  const { type, data } = event.data || {};
+  const replyPort = event.ports && event.ports[0];
   
   switch (type) {
     case 'GET_STATS':
-      event.ports[0].postMessage({ type: 'STATS', data: stats });
+      if (replyPort) replyPort.postMessage({ type: 'STATS', data: stats });
       break;
       
     case 'UPDATE_CONFIG':
-      Object.assign(CONFIG, data);
+      // Accept only known settings with boolean values (no prototype keys, no new settings)
+      if (data && typeof data === 'object') {
+        for (const key of Object.keys(CONFIG)) {
+          if (Object.prototype.hasOwnProperty.call(data, key) && typeof data[key] === 'boolean') {
+            CONFIG[key] = data[key];
+          }
+        }
+      }
       break;
       
     case 'RESET_STATS':
@@ -126,7 +134,7 @@ self.addEventListener('message', (event) => {
       break;
       
     case 'GET_CONFIG':
-      event.ports[0].postMessage({ type: 'CONFIG', data: CONFIG });
+      if (replyPort) replyPort.postMessage({ type: 'CONFIG', data: CONFIG });
       break;
   }
 });
@@ -186,21 +194,21 @@ async function handleRequest(request, url) {
   if (CONFIG.blockTrackers && isTracker(url.href)) {
     stats.trackersBlocked++;
     notifyClients('TRACKER_BLOCKED', { url: url.href });
-    return new Response('', { status: 204 });
+    return new Response(null, { status: 204 });
   }
   
   // Check for cryptominers
   if (CONFIG.blockCryptominers && isCryptominer(url.href)) {
     stats.cryptominersBlocked++;
     notifyClients('CRYPTOMINER_BLOCKED', { url: url.href });
-    return new Response('', { status: 204 });
+    return new Response(null, { status: 204 });
   }
   
   // Check for fingerprinting scripts
   if (CONFIG.blockFingerprinting && isFingerprinter(url.href)) {
     stats.fingerprintsSpoofed++;
     notifyClients('FINGERPRINT_BLOCKED', { url: url.href });
-    return new Response('', { status: 204 });
+    return new Response(null, { status: 204 });
   }
   
   // Upgrade HTTP to HTTPS
