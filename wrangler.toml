@@ -25,7 +25,9 @@ compatibility_flags = ["nodejs_compat"]
 # ]
 
 # Custom domain (optional)
-# workers_dev = false
+# workers.dev stays disabled on purpose: this Worker is served on shield.idarti.com only.
+# Without this line wrangler deploy would enable a public *.workers.dev URL.
+workers_dev = false
 # route = "security.yourdomain.com/*"
 
 [vars]
